@@ -102,11 +102,11 @@ function _omb_cmd_plugin {
       return 1
     fi
     
+    local -a available_plugins
+    _comp_cmd_omb__get_available_plugins
     local plugin
     for plugin in "$@"; do
       # Check if plugin exists
-      local -a available_plugins
-      _comp_cmd_omb__get_available_plugins
       if ! _omb_util_array_contains available_plugins "$plugin"; then
         _omb_log_error "Plugin '$plugin' not found"
         continue
