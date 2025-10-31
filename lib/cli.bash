@@ -257,7 +257,9 @@ function _omb_cmd_theme {
     
     # Update OSH_THEME in .bashrc
     if grep -q "^OSH_THEME=" "$bashrc"; then
-      sed -i.bak "s/^OSH_THEME=.*/OSH_THEME=\"$theme\"/" "$bashrc"
+      local escaped_theme
+      escaped_theme=$(printf '%s' "$theme" | sed -e 's/[\/&\\]/\\&/g')
+      sed -i.bak "s/^OSH_THEME=.*/OSH_THEME=\"$escaped_theme\"/" "$bashrc"
       _omb_log_success "Theme set to '$theme' in $bashrc"
       _omb_log_note "Reload your session with 'omb reload' or 'source ~/.bashrc'"
     else
