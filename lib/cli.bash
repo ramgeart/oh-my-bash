@@ -24,7 +24,7 @@ Available commands:
   update                Update Oh My Bash to latest version
   version               Show Oh My Bash version
 
-For more information, visit: https://github.com/ohmybash/oh-my-bash
+For more information, visit: https://github.com/ramgeart/oh-my-bash
 EOF
 }
 function _omb_cmd_changelog {
