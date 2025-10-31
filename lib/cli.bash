@@ -121,7 +121,10 @@ function _omb_cmd_plugin {
       
       # Add plugin to plugins array in .bashrc
       if grep -q "^plugins=(" "$bashrc"; then
-        sed -i.bak "s/^plugins=(\(.*\))/plugins=(\1 $plugin)/" "$bashrc"
+        # Escape & and \ in plugin name for sed replacement
+        local plugin_escaped="${plugin//\\/\\\\}"
+        plugin_escaped="${plugin_escaped//&/\\&}"
+        sed -i.bak "s|^plugins=(\(.*\))|plugins=(\1 $plugin_escaped)|" "$bashrc"
         _omb_log_success "Plugin '$plugin' enabled in $bashrc"
       else
         _omb_log_error "Could not find plugins setting in $bashrc"
