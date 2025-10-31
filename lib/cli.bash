@@ -29,7 +29,7 @@ EOF
 }
 function _omb_cmd_changelog {
   local target=${1:-HEAD}
-  
+
   if [[ ! -d "$OSH/.git" ]]; then
     _omb_log_error "Oh My Bash directory is not a git repository"
     return 1
@@ -112,8 +112,9 @@ function _omb_cmd_plugin {
         continue
       fi
       
-      # Check if already enabled
-      if grep -q "^plugins=.*$plugin" "$bashrc"; then
+      # Check if already enabled (using word boundaries to match exact plugin name)
+      if grep -qE "^plugins=\(.*[[:space:]]$plugin([[:space:]]|\))" "$bashrc" || \
+         grep -qE "^plugins=\($plugin([[:space:]]|\))" "$bashrc"; then
         _omb_log_warning "Plugin '$plugin' is already enabled"
         continue
       fi
@@ -145,9 +146,30 @@ function _omb_cmd_plugin {
     
     local plugin
     for plugin in "$@"; do
-      # Remove plugin from plugins array in .bashrc
-      if grep -q "^plugins=.*$plugin" "$bashrc"; then
-        sed -i.bak "s/\(^plugins=([^)]*\) $plugin\(.*)\)/\1\2/; s/\(^plugins=([^)]*\)$plugin \(.*)\)/\1\2/; s/\(^plugins=(\)$plugin\(.*)\)/\1\2/" "$bashrc"
+      # Check if plugin is enabled (using word boundaries to match exact plugin name)
+      if grep -qE "^plugins=\(.*[[:space:]]$plugin([[:space:]]|\))" "$bashrc" || \
+         grep -qE "^plugins=\($plugin([[:space:]]|\))" "$bashrc"; then
+        # Remove plugin from plugins array using awk for better readability
+        cp "$bashrc" "$bashrc.bak"
+        awk -v plugin="$plugin" '
+          /^plugins=\(/ {
+            # Extract content between parentheses
+            match($0, /^plugins=\((.*)\)/, arr)
+            content = arr[1]
+            # Split by spaces and rebuild without the target plugin
+            n = split(content, plugins, " ")
+            new_content = ""
+            for (i = 1; i <= n; i++) {
+              if (plugins[i] != plugin && plugins[i] != "") {
+                if (new_content != "") new_content = new_content " "
+                new_content = new_content plugins[i]
+              }
+            }
+            print "plugins=(" new_content ")"
+            next
+          }
+          { print }
+        ' "$bashrc.bak" > "$bashrc"
         _omb_log_success "Plugin '$plugin' disabled in $bashrc"
       else
         _omb_log_warning "Plugin '$plugin' is not enabled"
