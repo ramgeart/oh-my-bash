@@ -3,28 +3,296 @@
 _omb_module_require lib:utils
 
 function _omb_cmd_help {
-  echo 'Not yet implemented'
+  cat << EOF
+Usage: omb <command> [options]
+
+Available commands:
+  changelog [ref]       Show the Oh My Bash changelog
+  help                  Show this help message
+  plugin <subcmd>       Manage plugins
+    disable <plugins>     Disable one or more plugins
+    enable <plugins>      Enable one or more plugins
+    info <plugin>         Get information about a plugin
+    list                  List all available plugins
+    load <plugins>        Load one or more plugins
+  pull                  Pull latest changes from repository
+  reload                Reload the current bash session
+  theme <subcmd>        Manage themes
+    list                  List all available themes
+    set <theme>           Set theme in .bashrc
+    use <theme>           Use theme in current session
+  update                Update Oh My Bash to latest version
+  version               Show Oh My Bash version
+
+For more information, visit: https://github.com/ramgeart/oh-my-bash
+EOF
 }
 function _omb_cmd_changelog {
-  echo 'Not yet implemented'
+  local target=${1:-HEAD}
+
+  if [[ ! -d "$OSH/.git" ]]; then
+    _omb_log_error "Oh My Bash directory is not a git repository"
+    return 1
+  fi
+  
+  _omb_log_arrow "Oh My Bash Changelog"
+  command git --git-dir="$OSH/.git" --work-tree="$OSH" log --oneline --decorate --color "$target" | head -20
 }
 function _omb_cmd_plugin {
-  echo 'Not yet implemented'
+  local subcmd=${1:-}
+  
+  case "$subcmd" in
+  list)
+    _omb_log_arrow "Available plugins:"
+    local -a available_plugins
+    _comp_cmd_omb__get_available_plugins
+    printf '%s\n' "${available_plugins[@]}" | sort
+    ;;
+  info)
+    if [[ -z ${2:-} ]]; then
+      _omb_log_error "Please specify a plugin name"
+      echo "Usage: omb plugin info <plugin>"
+      return 1
+    fi
+    local plugin=$2
+    local readme
+    
+    # Search for README in plugin directory
+    for readme in "$OSH_CUSTOM/plugins/$plugin/README.md" "$OSH/plugins/$plugin/README.md" \
+                  "$OSH_CUSTOM/plugins/$plugin/README" "$OSH/plugins/$plugin/README"; do
+      if [[ -f $readme ]]; then
+        _omb_log_arrow "Plugin: $plugin"
+        cat "$readme"
+        return 0
+      fi
+    done
+    
+    _omb_log_warning "No README found for plugin '$plugin'"
+    ;;
+  load)
+    shift
+    if [[ $# -eq 0 ]]; then
+      _omb_log_error "Please specify one or more plugins"
+      echo "Usage: omb plugin load <plugin1> [plugin2 ...]"
+      return 1
+    fi
+    
+    local plugin failed=0
+    for plugin in "$@"; do
+      if _omb_module_require "plugin:$plugin" 2>/dev/null; then
+        _omb_log_success "Plugin '$plugin' loaded"
+      else
+        _omb_log_error "Failed to load plugin '$plugin'"
+        failed=1
+      fi
+    done
+    return $failed
+    ;;
+  enable)
+    shift
+    if [[ $# -eq 0 ]]; then
+      _omb_log_error "Please specify one or more plugins"
+      echo "Usage: omb plugin enable <plugin1> [plugin2 ...]"
+      return 1
+    fi
+    
+    local bashrc="$HOME/.bashrc"
+    if [[ ! -f $bashrc ]]; then
+      _omb_log_error "$bashrc not found"
+      return 1
+    fi
+    
+    local -a available_plugins
+    _comp_cmd_omb__get_available_plugins
+    local plugin
+    for plugin in "$@"; do
+      # Check if plugin exists
+      if ! _omb_util_array_contains available_plugins "$plugin"; then
+        _omb_log_error "Plugin '$plugin' not found"
+        continue
+      fi
+      
+      # Check if already enabled (using word boundaries to match exact plugin name)
+      if grep -qE "^plugins=\(.*[[:space:]]$plugin([[:space:]]|\))" "$bashrc" || \
+         grep -qE "^plugins=\($plugin([[:space:]]|\))" "$bashrc"; then
+        _omb_log_warning "Plugin '$plugin' is already enabled"
+        continue
+      fi
+      
+      # Add plugin to plugins array in .bashrc
+      if grep -q "^plugins=(" "$bashrc"; then
+        # Escape & and \ in plugin name for sed replacement
+        local plugin_escaped="${plugin//\\/\\\\}"
+        plugin_escaped="${plugin_escaped//&/\\&}"
+        sed -i.bak "s|^plugins=(\(.*\))|plugins=(\1 $plugin_escaped)|" "$bashrc"
+        _omb_log_success "Plugin '$plugin' enabled in $bashrc"
+      else
+        _omb_log_error "Could not find plugins setting in $bashrc"
+        return 1
+      fi
+    done
+    _omb_log_note "Reload your session with 'omb reload' or 'source ~/.bashrc'"
+    ;;
+  disable)
+    shift
+    if [[ $# -eq 0 ]]; then
+      _omb_log_error "Please specify one or more plugins"
+      echo "Usage: omb plugin disable <plugin1> [plugin2 ...]"
+      return 1
+    fi
+    
+    local bashrc="$HOME/.bashrc"
+    if [[ ! -f $bashrc ]]; then
+      _omb_log_error "$bashrc not found"
+      return 1
+    fi
+    
+    local plugin
+    for plugin in "$@"; do
+      # Check if plugin is enabled (using word boundaries to match exact plugin name)
+      if grep -qE "^plugins=\(.*[[:space:]]$plugin([[:space:]]|\))" "$bashrc" || \
+         grep -qE "^plugins=\($plugin([[:space:]]|\))" "$bashrc"; then
+        # Remove plugin from plugins array using awk for better readability
+        cp "$bashrc" "$bashrc.bak"
+        awk -v plugin="$plugin" '
+          /^plugins=\(/ {
+            # Extract content between parentheses
+            match($0, /^plugins=\((.*)\)/, arr)
+            content = arr[1]
+            # Split by spaces and rebuild without the target plugin
+            n = split(content, plugins, " ")
+            new_content = ""
+            for (i = 1; i <= n; i++) {
+              if (plugins[i] != plugin && plugins[i] != "") {
+                if (new_content != "") new_content = new_content " "
+                new_content = new_content plugins[i]
+              }
+            }
+            print "plugins=(" new_content ")"
+            next
+          }
+          { print }
+        ' "$bashrc.bak" > "$bashrc"
+        _omb_log_success "Plugin '$plugin' disabled in $bashrc"
+      else
+        _omb_log_warning "Plugin '$plugin' is not enabled"
+      fi
+    done
+    _omb_log_note "Reload your session with 'omb reload' or 'source ~/.bashrc'"
+    ;;
+  *)
+    _omb_log_error "Unknown plugin subcommand: $subcmd"
+    echo "Usage: omb plugin <list|info|load|enable|disable> [options]"
+    return 1
+    ;;
+  esac
 }
 function _omb_cmd_pull {
-  echo 'Not yet implemented'
+  if [[ ! -d "$OSH/.git" ]]; then
+    _omb_log_error "Oh My Bash directory is not a git repository"
+    return 1
+  fi
+  
+  _omb_log_arrow "Pulling latest changes from Oh My Bash repository..."
+  if command git --git-dir="$OSH/.git" --work-tree="$OSH" pull --rebase --stat origin master; then
+    _omb_log_success "Successfully pulled latest changes"
+  else
+    _omb_log_error "Failed to pull changes"
+    return 1
+  fi
 }
 function _omb_cmd_reload {
-  echo 'Not yet implemented'
+  _omb_log_arrow "Reloading Oh My Bash..."
+  if [[ -f ~/.bashrc ]]; then
+    # shellcheck disable=SC1090
+    source ~/.bashrc
+    _omb_log_success "Bash session reloaded!"
+  else
+    _omb_log_error "Cannot find ~/.bashrc"
+    return 1
+  fi
 }
 function _omb_cmd_theme {
-  echo 'Not yet implemented'
+  local subcmd=${1:-}
+  
+  case "$subcmd" in
+  list)
+    _omb_log_arrow "Available themes:"
+    local -a available_themes
+    _comp_cmd_omb__get_available_themes
+    printf '%s\n' "${available_themes[@]}" | sort
+    ;;
+  use)
+    if [[ -z ${2:-} ]]; then
+      _omb_log_error "Please specify a theme name"
+      echo "Usage: omb theme use <theme>"
+      return 1
+    fi
+    local theme=$2
+    if _omb_module_require "theme:$theme" 2>/dev/null; then
+      _omb_log_success "Theme '$theme' loaded successfully"
+    else
+      _omb_log_error "Failed to load theme '$theme'"
+      return 1
+    fi
+    ;;
+  set)
+    if [[ -z ${2:-} ]]; then
+      _omb_log_error "Please specify a theme name"
+      echo "Usage: omb theme set <theme>"
+      return 1
+    fi
+    local theme=$2
+    local bashrc="$HOME/.bashrc"
+    
+    if [[ ! -f $bashrc ]]; then
+      _omb_log_error "$bashrc not found"
+      return 1
+    fi
+    
+    # Check if theme exists
+    local -a available_themes
+    _comp_cmd_omb__get_available_themes
+    if ! _omb_util_array_contains available_themes "$theme"; then
+      _omb_log_error "Theme '$theme' not found"
+      return 1
+    fi
+    
+    # Update OSH_THEME in .bashrc
+    if grep -q "^OSH_THEME=" "$bashrc"; then
+      local escaped_theme
+      escaped_theme=$(printf '%s' "$theme" | sed -e 's/[\/&\\]/\\&/g')
+      sed -i.bak "s/^OSH_THEME=.*/OSH_THEME=\"$escaped_theme\"/" "$bashrc"
+      _omb_log_success "Theme set to '$theme' in $bashrc"
+      _omb_log_note "Reload your session with 'omb reload' or 'source ~/.bashrc'"
+    else
+      _omb_log_error "Could not find OSH_THEME setting in $bashrc"
+      return 1
+    fi
+    ;;
+  *)
+    _omb_log_error "Unknown theme subcommand: $subcmd"
+    echo "Usage: omb theme <list|use|set> [theme]"
+    return 1
+    ;;
+  esac
 }
 function _omb_cmd_update {
-  echo 'Not yet implemented'
+  if [[ ! -d "$OSH/.git" ]]; then
+    _omb_log_error "Oh My Bash directory is not a git repository"
+    return 1
+  fi
+  
+  # Use the existing upgrade.sh script
+  if [[ -f "$OSH/tools/upgrade.sh" ]]; then
+    source "$OSH/tools/upgrade.sh"
+  else
+    _omb_log_error "Upgrade script not found"
+    return 1
+  fi
 }
 function _omb_cmd_version {
-  echo 'Not yet implemented'
+  echo "Oh My Bash version: ${OMB_VERSION}"
 }
 
 function omb {
