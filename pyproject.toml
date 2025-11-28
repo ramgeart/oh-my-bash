@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oh-my-bash-enhanced"
+version = "1.0.0"
+description = "Oh My Bash con funciones CLI implementadas - Instalable con uv"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Ramgeart", email = "dev@ramgeart.dev"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Shells",
+    "Topic :: Utilities",
+]
+requires-python = ">=3.7"
+
+[project.urls]
+Homepage = "https://github.com/ramgeart/oh-my-bash-enhanced"
+Repository = "https://github.com/ramgeart/oh-my-bash-enhanced"
+
+[project.scripts]
+omb-install = "setup:install_oh_my_bash"
+omb-uninstall = "setup:uninstall_oh_my_bash"
+
+[tool.setuptools]
+py-modules = ["setup"]
+
+[tool.uv]
+package = true
