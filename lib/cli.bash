@@ -36,11 +36,20 @@ EOF
 function _omb_cmd_changelog {
   local ref="${1:-master}"
   
-  echo "Changelog for $ref:"
-  echo "=================="
-  echo
+  if ! _omb_util_command_exists git; then
+    _omb_util_print "Error: git is required to view the changelog"
+    return 1
+  fi
   
-  # Obtener los commits del ref especificado
+  if [[ ! -d "$OSH/.git" ]]; then
+    _omb_util_print "Error: Oh My Bash directory is not a git repository"
+    return 1
+  fi
+  
+  _omb_util_print "Changelog for $ref:"
+  _omb_util_print "=================="
+  _omb_util_print ""
+  
   if command git -C "$OSH" rev-parse --verify "$ref" &>/dev/null; then
     local commits
     mapfile -t commits < <(command git -C "$OSH" log --oneline --no-merges -20 "$ref")
@@ -48,14 +57,14 @@ function _omb_cmd_changelog {
     if ((${#commits[@]} > 0)); then
       local commit
       for commit in "${commits[@]}"; do
-        echo "  $commit"
+        _omb_util_print "  $commit"
       done
     else
-      echo "  No commits found for $ref"
+      _omb_util_print "  No commits found for $ref"
     fi
   else
-    echo "  Error: Reference '$ref' not found in the repository"
-    echo "  Available references:"
+    _omb_util_print "  Error: Reference '$ref' not found in the repository"
+    _omb_util_print "  Available references:"
     command git -C "$OSH" for-each-ref --format="%(refname:short)" refs/heads refs/tags | sed 's/^/    /'
   fi
 }
@@ -66,23 +75,28 @@ function _omb_cmd_plugin {
   case "$subcommand" in
   enable)
     if (($# == 0)); then
-      echo "Error: Please specify plugin name(s) to enable"
-      echo "Usage: omb plugin enable <plugin> [plugin...]"
+      _omb_util_print "Error: Please specify plugin name(s) to enable"
+      _omb_util_print "Usage: omb plugin enable <plugin> [plugin...]"
       return 1
+    fi
+
+    # Initialize plugins array if it doesn't exist
+    if ! _omb_util_function_exists plugins; then
+      plugins=()
     fi
 
     local plugin
     for plugin in "$@"; do
       if _omb_plugin_exists "$plugin"; then
         if _omb_util_array_contains plugins "$plugin"; then
-          echo "Plugin '$plugin' is already enabled"
+          _omb_util_print "Plugin '$plugin' is already enabled"
         else
           plugins+=("$plugin")
           _omb_plugin_save_config
-          echo "Plugin '$plugin' enabled. Please run 'omb reload' to apply changes."
+          _omb_util_print "Plugin '$plugin' enabled. Please run 'omb reload' to apply changes."
         fi
       else
-        echo "Error: Plugin '$plugin' not found"
+        _omb_util_print "Error: Plugin '$plugin' not found"
         return 1
       fi
     done
@@ -90,9 +104,15 @@ function _omb_cmd_plugin {
 
   disable)
     if (($# == 0)); then
-      echo "Error: Please specify plugin name(s) to disable"
-      echo "Usage: omb plugin disable <plugin> [plugin...]"
+      _omb_util_print "Error: Please specify plugin name(s) to disable"
+      _omb_util_print "Usage: omb plugin disable <plugin> [plugin...]"
       return 1
+    fi
+
+    # Check if plugins array exists
+    if ! _omb_util_function_exists plugins; then
+      _omb_util_print "No plugins are currently enabled"
+      return 0
     fi
 
     local plugin
@@ -100,16 +120,16 @@ function _omb_cmd_plugin {
       if _omb_util_array_contains plugins "$plugin"; then
         _omb_util_array_remove plugins "$plugin"
         _omb_plugin_save_config
-        echo "Plugin '$plugin' disabled. Please run 'omb reload' to apply changes."
+        _omb_util_print "Plugin '$plugin' disabled. Please run 'omb reload' to apply changes."
       else
-        echo "Plugin '$plugin' is not enabled"
+        _omb_util_print "Plugin '$plugin' is not enabled"
       fi
     done
     ;;
 
   list)
-    echo "Available plugins:"
-    echo "=================="
+    _omb_util_print "Available plugins:"
+    _omb_util_print "=================="
     
     local -a available_plugins
     _comp_cmd_omb__get_available_plugins
@@ -117,9 +137,9 @@ function _omb_cmd_plugin {
     local plugin
     for plugin in "${available_plugins[@]}"; do
       if _omb_util_array_contains plugins "$plugin"; then
-        echo "  ✓ $plugin (enabled)"
+        _omb_util_print "  ✓ $plugin (enabled)"
       else
-        echo "    $plugin"
+        _omb_util_print "    $plugin"
       fi
     done
     ;;
@@ -127,31 +147,31 @@ function _omb_cmd_plugin {
   info)
     local plugin="${1:-}"
     if [[ -z "$plugin" ]]; then
-      echo "Error: Please specify a plugin name"
-      echo "Usage: omb plugin info <plugin>"
+      _omb_util_print "Error: Please specify a plugin name"
+      _omb_util_print "Usage: omb plugin info <plugin>"
       return 1
     fi
 
     local plugin_file
     if _omb_plugin_exists "$plugin"; then
       plugin_file=$(_omb_plugin_find_file "$plugin")
-      echo "Plugin: $plugin"
-      echo "File: $plugin_file"
-      echo
+      _omb_util_print "Plugin: $plugin"
+      _omb_util_print "File: $plugin_file"
+      _omb_util_print ""
       if [[ -f "$plugin_file" ]]; then
-        echo "Description:"
+        _omb_util_print "Description:"
         grep -E "^#.*@about|^#.*Description" "$plugin_file" | head -5 | sed 's/^# *//' | sed 's/@about/Description:/'
       fi
     else
-      echo "Error: Plugin '$plugin' not found"
+      _omb_util_print "Error: Plugin '$plugin' not found"
       return 1
     fi
     ;;
 
   load)
     if (($# == 0)); then
-      echo "Error: Please specify plugin name(s) to load"
-      echo "Usage: omb plugin load <plugin> [plugin...]"
+      _omb_util_print "Error: Please specify plugin name(s) to load"
+      _omb_util_print "Usage: omb plugin load <plugin> [plugin...]"
       return 1
     fi
 
@@ -159,17 +179,17 @@ function _omb_cmd_plugin {
     for plugin in "$@"; do
       if _omb_plugin_exists "$plugin"; then
         _omb_module_require_plugin "$plugin"
-        echo "Plugin '$plugin' loaded."
+        _omb_util_print "Plugin '$plugin' loaded."
       else
-        echo "Error: Plugin '$plugin' not found"
+        _omb_util_print "Error: Plugin '$plugin' not found"
         return 1
       fi
     done
     ;;
 
   *)
-    echo "Error: Unknown plugin subcommand '$subcommand'"
-    echo "Usage: omb plugin <enable|disable|list|info|load> [args...]"
+    _omb_util_print "Error: Unknown plugin subcommand '$subcommand'"
+    _omb_util_print "Usage: omb plugin <enable|disable|list|info|load> [args...]"
     return 1
     ;;
   esac
@@ -188,61 +208,72 @@ function _omb_plugin_find_file {
   _omb_util_glob_expand plugin_files "{$OSH,$OSH_CUSTOM}/plugins/$plugin/{$plugin,*.plugin}.{bash,sh}"
   if ((${#plugin_files[@]} > 0)); then
     _omb_util_print "${plugin_files[0]}"
+    return 0
+  else
+    return 1
   fi
 }
 
 function _omb_plugin_save_config {
-  # Esta es una implementación básica que muestra las configuraciones actuales
-  echo "# Current plugin configuration:"
-  echo "plugins=(${plugins[@]@Q})"
+  _omb_util_print "# Current plugin configuration:"
+  _omb_util_print "plugins=(${plugins[@]@Q})"
+  _omb_util_print ""
+  _omb_util_print "# To make these changes permanent, add the above line to your ~/.bashrc"
 }
 function _omb_cmd_pull {
-  echo "Pulling latest changes for Oh My Bash..."
+  _omb_util_print "Pulling latest changes for Oh My Bash..."
   
-  # Verificar si estamos en un repositorio git
+  if ! _omb_util_command_exists git; then
+    _omb_util_print "Error: git is required to pull updates"
+    return 1
+  fi
+  
   if [[ ! -d "$OSH/.git" ]]; then
-    echo "Error: Oh My Bash directory is not a git repository"
+    _omb_util_print "Error: Oh My Bash directory is not a git repository"
     return 1
   fi
 
-  # Guardar la rama actual
   local current_branch
   current_branch=$(command git -C "$OSH" rev-parse --abbrev-ref HEAD 2>/dev/null)
   
   if [[ -z "$current_branch" ]]; then
-    echo "Error: Unable to determine current branch"
+    _omb_util_print "Error: Unable to determine current branch"
     return 1
   fi
 
-  echo "Current branch: $current_branch"
+  _omb_util_print "Current branch: $current_branch"
   
-  # Hacer pull de los cambios
-  if command git -C "$OSH" pull; then
-    echo "Changes pulled successfully!"
-    echo "Please run 'omb reload' to apply the changes."
+  if command git -C "$OSH" pull --rebase origin "$current_branch"; then
+    _omb_util_print "Changes pulled successfully!"
+    _omb_util_print "Please run 'omb reload' to apply the changes."
   else
-    echo "Error: Failed to pull changes"
+    _omb_util_print "Error: Failed to pull changes"
+    _omb_util_print "You may have uncommitted changes or conflicts"
     return 1
   fi
 }
 function _omb_cmd_reload {
-  echo "Reloading Oh My Bash..."
+  _omb_util_print "Reloading Oh My Bash..."
   
-  # Recargar la configuración de oh-my-bash
   if [[ -f "$OSH/oh-my-bash.sh" ]]; then
-    # Guardar algunas variables importantes
+    # Save current working directory and important variables
+    local current_dir=$PWD
     local old_OSH="$OSH"
     local old_OSH_CUSTOM="$OSH_CUSTOM"
     local old_OSH_THEME="$OSH_THEME"
+    local old_plugins=("${plugins[@]}")
     
-    # Recargar oh-my-bash
+    # Source the main file to reload everything
     source "$OSH/oh-my-bash.sh"
     
-    echo "Oh My Bash reloaded successfully!"
-    echo "Theme: $OSH_THEME"
-    echo "Plugins: ${plugins[*]}"
+    # Return to original directory
+    cd "$current_dir" || return 1
+    
+    _omb_util_print "Oh My Bash reloaded successfully!"
+    _omb_util_print "Theme: $OSH_THEME"
+    _omb_util_print "Plugins: ${plugins[*]}"
   else
-    echo "Error: Oh My Bash main file not found at $OSH/oh-my-bash.sh"
+    _omb_util_print "Error: Oh My Bash main file not found at $OSH/oh-my-bash.sh"
     return 1
   fi
 }
@@ -252,18 +283,18 @@ function _omb_cmd_theme {
 
   case "$subcommand" in
   list)
-    echo "Available themes:"
-    echo "=================="
+    _omb_util_print "Available themes:"
+    _omb_util_print "=================="
     
     local -a available_themes
     _comp_cmd_omb__get_available_themes
     
     local theme
     for theme in "${available_themes[@]}"; do
-      if [[ "$theme" == "$OSH_THEME" ]]; then
-        echo "  ✓ $theme (current)"
+      if [[ "$theme" == "${OSH_THEME:-}" ]]; then
+        _omb_util_print "  ✓ $theme (current)"
       else
-        echo "    $theme"
+        _omb_util_print "    $theme"
       fi
     done
     ;;
@@ -271,16 +302,16 @@ function _omb_cmd_theme {
   use)
     local theme="${1:-}"
     if [[ -z "$theme" ]]; then
-      echo "Error: Please specify a theme name"
-      echo "Usage: omb theme use <theme>"
+      _omb_util_print "Error: Please specify a theme name"
+      _omb_util_print "Usage: omb theme use <theme>"
       return 1
     fi
 
     if _omb_theme_exists "$theme"; then
       _omb_module_require_theme "$theme"
-      echo "Theme '$theme' loaded temporarily. This will not persist after reload."
+      _omb_util_print "Theme '$theme' loaded temporarily. This will not persist after reload."
     else
-      echo "Error: Theme '$theme' not found"
+      _omb_util_print "Error: Theme '$theme' not found"
       return 1
     fi
     ;;
@@ -288,23 +319,23 @@ function _omb_cmd_theme {
   set)
     local theme="${1:-}"
     if [[ -z "$theme" ]]; then
-      echo "Error: Please specify a theme name"
-      echo "Usage: omb theme set <theme>"
+      _omb_util_print "Error: Please specify a theme name"
+      _omb_util_print "Usage: omb theme set <theme>"
       return 1
     fi
 
     if _omb_theme_exists "$theme"; then
       _omb_theme_set_config "$theme"
-      echo "Theme '$theme' set as default. Please run 'omb reload' to apply changes."
+      _omb_util_print "Theme '$theme' set as default. Please run 'omb reload' to apply changes."
     else
-      echo "Error: Theme '$theme' not found"
+      _omb_util_print "Error: Theme '$theme' not found"
       return 1
     fi
     ;;
 
   *)
-    echo "Error: Unknown theme subcommand '$subcommand'"
-    echo "Usage: omb theme <list|use|set> [args...]"
+    _omb_util_print "Error: Unknown theme subcommand '$subcommand'"
+    _omb_util_print "Usage: omb theme <list|use|set> [args...]"
     return 1
     ;;
   esac
@@ -319,61 +350,73 @@ function _omb_theme_exists {
 
 function _omb_theme_set_config {
   local theme="$1"
-  echo "# To make this theme permanent, add this line to your ~/.bashrc:"
-  echo "export OSH_THEME=\"$theme\""
+  _omb_util_print "# To make this theme permanent, add this line to your ~/.bashrc:"
+  _omb_util_print "export OSH_THEME=\"$theme\""
+  _omb_util_print ""
+  _omb_util_print "# Then run 'source ~/.bashrc' or start a new session to apply the change"
 }
 function _omb_cmd_update {
-  echo "Updating Oh My Bash..."
+  if ! _omb_util_command_exists git; then
+    _omb_util_print "Error: git is required to update Oh My Bash"
+    return 1
+  fi
   
-  # Verificar si estamos en un repositorio git
   if [[ ! -d "$OSH/.git" ]]; then
-    echo "Error: Oh My Bash directory is not a git repository"
+    _omb_util_print "Error: Oh My Bash directory is not a git repository"
     return 1
   fi
 
-  # Guardar la rama actual
   local current_branch
   current_branch=$(command git -C "$OSH" rev-parse --abbrev-ref HEAD 2>/dev/null)
   
   if [[ -z "$current_branch" ]]; then
-    echo "Error: Unable to determine current branch"
+    _omb_util_print "Error: Unable to determine current branch"
     return 1
   fi
 
-  echo "Current branch: $current_branch"
-  echo "Fetching latest changes..."
+  _omb_util_print "Updating Oh My Bash..."
+  _omb_util_print "Current branch: $current_branch"
+  _omb_util_print "Fetching latest changes..."
   
-  # Hacer fetch de los últimos cambios
   if command git -C "$OSH" fetch origin; then
-    echo "Checking for updates..."
+    _omb_util_print "Checking for updates..."
     
-    # Verificar si hay actualizaciones disponibles
     local local_commit remote_commit
     local_commit=$(command git -C "$OSH" rev-parse HEAD)
     remote_commit=$(command git -C "$OSH" rev-parse "@{u}")
     
     if [[ "$local_commit" == "$remote_commit" ]]; then
-      echo "Oh My Bash is already up to date!"
+      _omb_util_print "Oh My Bash is already up to date!"
     else
-      echo "Updates available. Pulling changes..."
+      _omb_util_print "Updates available. Pulling changes..."
       
-      # Hacer pull de los cambios
       if command git -C "$OSH" pull --rebase; then
-        echo "Oh My Bash updated successfully!"
-        echo "Please run 'omb reload' to apply the changes."
+        _omb_util_print "Oh My Bash updated successfully!"
+        _omb_util_print "Please run 'omb reload' to apply the changes."
       else
-        echo "Error: Failed to pull updates"
+        _omb_util_print "Error: Failed to pull updates"
+        _omb_util_print "You may have uncommitted changes or conflicts"
         return 1
       fi
     fi
   else
-    echo "Error: Failed to fetch updates"
+    _omb_util_print "Error: Failed to fetch updates"
     return 1
   fi
 }
 function _omb_cmd_version {
-  echo "Oh My Bash version: $OMB_VERSION"
-  echo "Bash version: $BASH_VERSION"
+  _omb_util_print "Oh My Bash version: $OMB_VERSION"
+  _omb_util_print "Bash version: $BASH_VERSION"
+  
+  if [[ -d "$OSH/.git" ]] && _omb_util_command_exists git; then
+    local current_branch current_commit
+    current_branch=$(command git -C "$OSH" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    current_commit=$(command git -C "$OSH" rev-parse --short HEAD 2>/dev/null)
+    if [[ -n "$current_branch" && -n "$current_commit" ]]; then
+      _omb_util_print "Git branch: $current_branch"
+      _omb_util_print "Git commit: $current_commit"
+    fi
+  fi
 }
 
 function omb {
@@ -554,3 +597,21 @@ complete -F _comp_cmd_omb omb
 
 [[ :$_omb_lib_cli__init_shopt: == *:extglob:* ]] || shopt -u extglob
 unset -v _omb_lib_cli__init_shopt
+
+# Función principal omb - hacerla disponible globalmente
+function omb {
+  if (($# == 0)); then
+    _omb_cmd_help
+    return 2
+  fi
+
+  # Verificar si el subcomando existe
+  if ! _omb_util_function_exists "_omb_cmd_$1"; then
+    echo "Error: Unknown command '$1'" >&2
+    echo "Run 'omb help' for usage information" >&2
+    return 2
+  fi
+
+  # Ejecutar el subcomando
+  "_omb_cmd_$@"
+}
